@@ -1,435 +1,632 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <title>烟花代码</title>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>跨年烟花 · 音效物理倒计时</title>
     <style>
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        padding: 0;
-      }
-      ul,
-      li {
-        text-indent: 0;
-        text-decoration: none;
-        margin: 0;
-        padding: 0;
-      }
-      img {
-        border: 0;
-      }
-      body {
-        background: url("./1.jpg");
-        background-size: cover;
-        background-repeat: no-repeat;
-        color: #999;
-        font: 100%/18px helvetica, arial, sans-serif;
-      }
-      canvas {
-        cursor: crosshair;
-        display: block;
-        left: 0;
-        position: absolute;
-        top: 0;
-        z-index: 20;
-      }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #0a0f1e;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            z-index: 10;
+            pointer-events: auto;
+        }
+        /* 倒计时面板 */
+        .countdown-panel {
+            position: absolute;
+            top: 25px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+            z-index: 30;
+            pointer-events: none;
+            font-weight: 600;
+            letter-spacing: 2px;
+        }
+        .greeting {
+            font-size: clamp(1.8rem, 8vw, 4rem);
+            margin-bottom: 8px;
+            background: linear-gradient(45deg, gold, orange, #ff4d4d);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+            animation: glow 2s ease-in-out infinite;
+        }
+        .timer {
+            font-size: clamp(1.2rem, 5vw, 2.4rem);
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            display: inline-block;
+            padding: 10px 28px;
+            border-radius: 60px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.3);
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-weight: 400;
+        }
+        .hint {
+            position: absolute;
+            bottom: 20px;
+            right: 25px;
+            color: rgba(255,255,255,0.4);
+            font-size: 14px;
+            z-index: 30;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 14px;
+            border-radius: 40px;
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(255,215,0,0.2);
+            pointer-events: none;
+        }
+        @keyframes glow {
+            0% { filter: drop-shadow(0 0 5px gold); }
+            50% { filter: drop-shadow(0 0 25px #ff4d4d); }
+            100% { filter: drop-shadow(0 0 5px gold); }
+        }
     </style>
-  </head>
-  <body>
-    <script
-      type="text/javascript"
-      src="https://cdn-static-devbit.csdn.net/devbit-static/js/jquery-3.3.1.min.js"
-    ></script>
-    <script type="text/javascript">
-      $(function () {
-        var Fireworks = function () {
-          var self = this;
-          var rand = function (rMi, rMa) {
-            return ~~(Math.random() * (rMa - rMi + 1) + rMi);
-          };
-          var hitTest = function (x1, y1, w1, h1, x2, y2, w2, h2) {
-            return !(
-              x1 + w1 < x2 ||
-              x2 + w2 < x1 ||
-              y1 + h1 < y2 ||
-              y2 + h2 < y1
-            );
-          };
-          window.requestAnimFrame = (function () {
-            return (
-              window.requestAnimationFrame ||
-              window.webkitRequestAnimationFrame ||
-              window.mozRequestAnimationFrame ||
-              window.oRequestAnimationFrame ||
-              window.msRequestAnimationFrame ||
-              function (a) {
-                window.setTimeout(a, 1e3 / 60);
-              }
-            );
-          })();
+</head>
+<body>
+    <div class="countdown-panel">
+        <div class="greeting" id="newYearGreeting">🎆 新年倒计时 🎆</div>
+        <div class="timer" id="countdownTimer">--:--:--</div>
+    </div>
+    <canvas id="fireworksCanvas"></canvas>
+    <div class="hint">✨ 点击 / 拖动 — 烟花从地面射向光标 | 倒计时结束自动狂欢 ✨</div>
 
-          self.init = function () {
-            self.canvas = document.createElement("canvas");
-            self.canvas.width = self.cw = $(window).innerWidth();
-            self.canvas.height = self.ch = $(window).innerHeight();
-            self.particles = [];
-            self.partCount = 150;
-            self.fireworks = [];
-            self.mx = self.cw / 2;
-            self.my = self.ch / 2;
-            self.currentHue = 30;
-            self.partSpeed = 5;
-            self.partSpeedVariance = 10;
-            self.partWind = 50;
-            self.partFriction = 5;
-            self.partGravity = 1;
-            self.hueMin = 0;
-            self.hueMax = 360;
-            self.fworkSpeed = 4;
-            self.fworkAccel = 10;
-            self.hueVariance = 30;
-            self.flickerDensity = 25;
-            self.showShockwave = true;
-            self.showTarget = false;
-            self.clearAlpha = 25;
+    <!-- 使用jQuery简化操作 (也可替换为原生, 但保留习惯) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
 
-            $(document.body).append(self.canvas);
-            self.ctx = self.canvas.getContext("2d");
-            self.ctx.lineCap = "round";
-            self.ctx.lineJoin = "round";
-            self.lineWidth = 1;
-            self.bindEvents();
-            self.canvasLoop();
+    <script>
+        (function() {
+            "use strict";
 
-            self.canvas.onselectstart = function () {
-              return false;
+            // ------------------- 跨年倒计时 & 新年模式 ------------------
+            const TARGET_YEAR = 2026;       // 目标新年 (可修改)
+            const TARGET_MONTH = 0;          // 0 = 一月
+            const TARGET_DAY = 1;
+            const TARGET_HOUR = 0;
+            const TARGET_MINUTE = 0;
+            const TARGET_SECOND = 0;
+
+            let countdownInterval;
+            let newYearModeActive = false;   // 新年模式激活后自动放烟花
+            let newYearModeTimer = null;
+
+            function getNextNewYearTime() {
+                let now = new Date();
+                let year = now.getFullYear();
+                let target = new Date(year, TARGET_MONTH, TARGET_DAY, TARGET_HOUR, TARGET_MINUTE, TARGET_SECOND);
+                if (now > target) {
+                    // 过了今年元旦，取明年
+                    target = new Date(year + 1, TARGET_MONTH, TARGET_DAY, TARGET_HOUR, TARGET_MINUTE, TARGET_SECOND);
+                }
+                return target.getTime();
+            }
+
+            function updateCountdownDisplay() {
+                const targetTime = getNextNewYearTime();
+                const now = Date.now();
+                const diff = targetTime - now;
+
+                if (diff <= 0 && !newYearModeActive) {
+                    // 到达新年！激活狂欢模式
+                    document.getElementById('newYearGreeting').innerText = '🎉 新 年 快 乐 ！ 🎉';
+                    document.getElementById('countdownTimer').innerText = '00:00:00';
+                    newYearModeActive = true;
+
+                    // 开启新年狂欢：持续自动生成大量烟花
+                    if (window.fworks) {
+                        window.fworks.enableNewYearRave(true);
+                    }
+
+                    // 清除倒计时更新
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    return;
+                }
+
+                if (diff > 0) {
+                    const totalSeconds = Math.floor(diff / 1000);
+                    const hours = Math.floor(totalSeconds / 3600);
+                    const minutes = Math.floor((totalSeconds % 3600) / 60);
+                    const seconds = totalSeconds % 60;
+
+                    const timerStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    document.getElementById('countdownTimer').innerText = timerStr;
+
+                    // 如果新年模式之前激活过但倒计时又大于0 (极少情况), 但以防万一
+                    if (newYearModeActive && diff > 0) {
+                        newYearModeActive = false;
+                        if (window.fworks) window.fworks.enableNewYearRave(false);
+                    }
+                }
+            }
+
+            // 启动倒计时刷新
+            updateCountdownDisplay();
+            countdownInterval = setInterval(updateCountdownDisplay, 500);
+
+            // ------------------- 烟花增强类 ---------------------------
+            var FireworksEnhanced = function(canvasElem) {
+                var self = this;
+
+                // 工具函数
+                var rand = function(rMi, rMa) {
+                    return ~~(Math.random() * (rMa - rMi + 1) + rMi);
+                };
+
+                var hitTest = function(x1, y1, w1, h1, x2, y2, w2, h2) {
+                    return !(x1 + w1 < x2 || x2 + w2 < x1 || y1 + h1 < y2 || y2 + h2 < y1);
+                };
+
+                window.requestAnimFrame = (function() {
+                    return window.requestAnimationFrame ||
+                        window.webkitRequestAnimationFrame ||
+                        window.mozRequestAnimationFrame ||
+                        window.oRequestAnimationFrame ||
+                        window.msRequestAnimationFrame ||
+                        function(callback) { window.setTimeout(callback, 1000 / 60); };
+                })();
+
+                // ------ 音频引擎 (使用Web Audio合成爆炸声) ------
+                let audioCtx = null;
+                let isAudioReady = false;
+
+                function initAudio() {
+                    if (audioCtx) return;
+                    try {
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        isAudioReady = true;
+                    } catch (e) {
+                        console.warn("Web Audio not supported");
+                    }
+                }
+
+                // 播放烟花爆炸声 (合成短噪声)
+                function playExplodeSound() {
+                    if (!audioCtx || !isAudioReady) return;
+                    // 注意: 音频上下文可能被挂起，需在用户手势后恢复。我们在第一次点击时恢复。
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume().then(() => {
+                            doPlay();
+                        }).catch(() => {});
+                    } else if (audioCtx.state === 'running') {
+                        doPlay();
+                    }
+
+                    function doPlay() {
+                        const now = audioCtx.currentTime;
+                        const gainNode = audioCtx.createGain();
+                        gainNode.connect(audioCtx.destination);
+
+                        // 噪声发生器
+                        const bufferSize = 4096;
+                        const noiseNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+                        noiseNode.onaudioprocess = function(e) {
+                            const output = e.outputBuffer.getChannelData(0);
+                            for (let i = 0; i < bufferSize; i++) {
+                                output[i] = Math.random() * 2 - 1; // 白噪声
+                            }
+                        };
+                        noiseNode.connect(gainNode);
+
+                        // 包络: 快速衰减
+                        gainNode.gain.setValueAtTime(0.25, now);
+                        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+                        // 断开连接
+                        noiseNode.stop = function() {
+                            noiseNode.disconnect();
+                            gainNode.disconnect();
+                        };
+                        setTimeout(() => { noiseNode.stop(); }, 300);
+                    }
+                }
+
+                // ----- 增强物理参数 ----
+                self.init = function() {
+                    self.canvas = canvasElem;
+                    self.ctx = self.canvas.getContext('2d');
+                    self.resizeCanvas();
+
+                    self.particles = [];
+                    self.fireworks = [];
+                    self.mx = self.cw / 2;
+                    self.my = self.ch / 2;
+
+                    // 节日氛围色调: 初始为金色偏红
+                    self.currentHue = rand(20, 50);  // 红橙金
+
+                    // 参数调优 (更绚烂)
+                    self.partCount = 200;                     // 粒子数
+                    self.partSpeed = 7;
+                    self.partSpeedVariance = 14;
+                    self.partWind = 30;                        // 风
+                    self.partFriction = 3;                      // 摩擦 3% (更少摩擦, 飘更久)
+                    self.partGravity = 0.8;                      // 重力稍小, 飘飘感
+                    self.hueMin = 0;
+                    self.hueMax = 360;
+                    self.fworkSpeed = 5;
+                    self.fworkAccel = 9;
+                    self.hueVariance = 45;                       // 颜色丰富
+                    self.flickerDensity = 35;                     // 闪烁密度
+                    self.showShockwave = true;
+                    self.showTarget = false;
+                    self.clearAlpha = 18;                         // 拖尾更长
+
+                    self.lineWidth = 1.8;
+
+                    // 新年狂欢标志 (自动发射)
+                    self.newYearRave = false;
+                    self.raveInterval = null;
+
+                    // 绑定事件和启动循环
+                    self.bindEvents();
+                    self.canvasLoop();
+
+                    self.canvas.onselectstart = function() { return false; };
+                };
+
+                self.resizeCanvas = function() {
+                    self.cw = window.innerWidth;
+                    self.ch = window.innerHeight;
+                    self.canvas.width = self.cw;
+                    self.canvas.height = self.ch;
+                    self.ctx.lineCap = 'round';
+                    self.ctx.lineJoin = 'round';
+                    self.ctx.lineWidth = self.lineWidth;
+                };
+
+                // 创建粒子 (增强: 亮度、大小)
+                self.createParticles = function(x, y, hue) {
+                    // 播放爆炸音效 (每次粒子爆炸)
+                    playExplodeSound();
+
+                    var count = self.partCount;
+                    while (count--) {
+                        var speed = rand(
+                            Math.max(1, self.partSpeed - self.partSpeedVariance),
+                            self.partSpeed + self.partSpeedVariance
+                        );
+                        var newParticle = {
+                            x: x,
+                            y: y,
+                            coordLast: [
+                                { x: x, y: y },
+                                { x: x, y: y },
+                                { x: x, y: y }
+                            ],
+                            angle: rand(0, 360),
+                            speed: speed,
+                            friction: 1 - self.partFriction / 100,
+                            gravity: self.partGravity / 2 + (Math.random() * 0.2 - 0.1), // 随机微小变化
+                            hue: rand(hue - self.hueVariance, hue + self.hueVariance),
+                            brightness: rand(70, 100),
+                            alpha: rand(60, 100) / 100,
+                            decay: rand(5, 25) / 1000,        // 衰减减慢
+                            wind: (rand(0, self.partWind) - self.partWind / 2) / 25,
+                            lineWidth: self.lineWidth * rand(8, 15) / 10,
+                            radius: rand(1, 3)                // 用于闪烁
+                        };
+                        self.particles.push(newParticle);
+                    }
+                };
+
+                self.updateParticles = function() {
+                    var i = self.particles.length;
+                    while (i--) {
+                        var p = self.particles[i];
+                        var radians = (p.angle * Math.PI) / 180;
+                        var vx = Math.cos(radians) * p.speed;
+                        var vy = Math.sin(radians) * p.speed;
+                        p.speed *= p.friction;
+
+                        // 轨迹历史
+                        p.coordLast[2].x = p.coordLast[1].x;
+                        p.coordLast[2].y = p.coordLast[1].y;
+                        p.coordLast[1].x = p.coordLast[0].x;
+                        p.coordLast[1].y = p.coordLast[0].y;
+                        p.coordLast[0].x = p.x;
+                        p.coordLast[0].y = p.y;
+
+                        p.x += vx;
+                        p.y += vy;
+                        p.y += p.gravity;
+                        p.angle += p.wind;
+                        p.alpha -= p.decay;
+
+                        // 边界反弹效果 (增强物理) —— 让粒子碰壁反弹而不是消失，增加趣味
+                        if (p.x < 0 || p.x > self.cw) {
+                            // 反转角度水平方向
+                            p.angle = 180 - p.angle;
+                            if (p.x < 0) p.x = 2;
+                            if (p.x > self.cw) p.x = self.cw - 2;
+                            // 反弹损耗
+                            p.speed *= 0.6;
+                        }
+                        if (p.y < 0 || p.y > self.ch) {
+                            p.angle = -p.angle;
+                            if (p.y < 0) p.y = 2;
+                            if (p.y > self.ch) p.y = self.ch - 2;
+                            p.speed *= 0.6;
+                        }
+
+                        // 移除条件改为 alpha 太低
+                        if (p.alpha < 0.01) {
+                            self.particles.splice(i, 1);
+                        }
+                    }
+                };
+
+                self.drawParticles = function() {
+                    var i = self.particles.length;
+                    while (i--) {
+                        var p = self.particles[i];
+                        var coordRand = rand(0, 2);
+                        self.ctx.beginPath();
+                        self.ctx.moveTo(
+                            Math.round(p.coordLast[coordRand].x),
+                            Math.round(p.coordLast[coordRand].y)
+                        );
+                        self.ctx.lineTo(Math.round(p.x), Math.round(p.y));
+                        self.ctx.closePath();
+                        self.ctx.strokeStyle = `hsla(${p.hue}, 100%, ${p.brightness}%, ${p.alpha})`;
+                        self.ctx.stroke();
+
+                        if (self.flickerDensity > 0) {
+                            var inverseDensity = 60 - self.flickerDensity;
+                            if (rand(0, inverseDensity) === 0) {
+                                self.ctx.beginPath();
+                                self.ctx.arc(Math.round(p.x), Math.round(p.y), rand(1, 3), 0, 2 * Math.PI);
+                                self.ctx.closePath();
+                                var randAlpha = rand(50, 100) / 100;
+                                self.ctx.fillStyle = `hsla(${p.hue}, 100%, ${p.brightness}%, ${randAlpha})`;
+                                self.ctx.fill();
+                            }
+                        }
+                    }
+                };
+
+                self.createFireworks = function(startX, startY, targetX, targetY) {
+                    var angle = Math.atan2(targetY - startY, targetX - startX);
+                    var newFirework = {
+                        x: startX,
+                        y: startY,
+                        startX: startX,
+                        startY: startY,
+                        hitX: false,
+                        hitY: false,
+                        coordLast: [
+                            { x: startX, y: startY },
+                            { x: startX, y: startY },
+                            { x: startX, y: startY }
+                        ],
+                        targetX: targetX,
+                        targetY: targetY,
+                        speed: self.fworkSpeed,
+                        angle: angle,
+                        shockwaveAngle: angle + 90 * (Math.PI / 180),
+                        acceleration: self.fworkAccel / 100,
+                        hue: self.currentHue,
+                        brightness: rand(70, 100),
+                        alpha: rand(70, 100) / 100,
+                        lineWidth: self.lineWidth
+                    };
+                    self.fireworks.push(newFirework);
+                };
+
+                self.updateFireworks = function() {
+                    var i = self.fireworks.length;
+                    while (i--) {
+                        var f = self.fireworks[i];
+                        // 修复：添加var声明
+                        var vx = Math.cos(f.angle) * f.speed;
+                        var vy = Math.sin(f.angle) * f.speed;
+                        f.speed *= 1 + f.acceleration;
+
+                        f.coordLast[2].x = f.coordLast[1].x;
+                        f.coordLast[2].y = f.coordLast[1].y;
+                        f.coordLast[1].x = f.coordLast[0].x;
+                        f.coordLast[1].y = f.coordLast[0].y;
+                        f.coordLast[0].x = f.x;
+                        f.coordLast[0].y = f.y;
+
+                        // x轴判断
+                        if (f.startX >= f.targetX) {
+                            if (f.x + vx <= f.targetX) { f.x = f.targetX; f.hitX = true; }
+                            else { f.x += vx; }
+                        } else {
+                            if (f.x + vx >= f.targetX) { f.x = f.targetX; f.hitX = true; }
+                            else { f.x += vx; }
+                        }
+
+                        if (f.startY >= f.targetY) {
+                            if (f.y + vy <= f.targetY) { f.y = f.targetY; f.hitY = true; }
+                            else { f.y += vy; }
+                        } else {
+                            if (f.y + vy >= f.targetY) { f.y = f.targetY; f.hitY = true; }
+                            else { f.y += vy; }
+                        }
+
+                        if (f.hitX && f.hitY) {
+                            self.createParticles(f.targetX, f.targetY, f.hue);
+                            self.fireworks.splice(i, 1);
+                        }
+                    }
+                };
+
+                self.drawFireworks = function() {
+                    var i = self.fireworks.length;
+                    self.ctx.globalCompositeOperation = 'lighter';
+                    while (i--) {
+                        var f = self.fireworks[i];
+                        var coordRand = rand(0, 2);
+                        self.ctx.beginPath();
+                        self.ctx.moveTo(
+                            Math.round(f.coordLast[coordRand].x),
+                            Math.round(f.coordLast[coordRand].y)
+                        );
+                        self.ctx.lineTo(Math.round(f.x), Math.round(f.y));
+                        self.ctx.closePath();
+                        self.ctx.strokeStyle = `hsla(${f.hue}, 100%, ${f.brightness}%, ${f.alpha})`;
+                        self.ctx.stroke();
+
+                        if (self.showShockwave) {
+                            self.ctx.save();
+                            self.ctx.translate(Math.round(f.x), Math.round(f.y));
+                            self.ctx.rotate(f.shockwaveAngle);
+                            self.ctx.beginPath();
+                            self.ctx.arc(0, 0, 1 * (f.speed / 4), 0, Math.PI, true);
+                            self.ctx.strokeStyle = `hsla(${f.hue}, 100%, ${f.brightness}%, ${rand(20, 50) / 100})`;
+                            self.ctx.lineWidth = f.lineWidth;
+                            self.ctx.stroke();
+                            self.ctx.restore();
+                        }
+                    }
+                    self.ctx.globalCompositeOperation = 'source-over';
+                };
+
+                // 开启新年狂欢模式 (自动连续烟花)
+                self.enableNewYearRave = function(enable) {
+                    self.newYearRave = enable;
+                    if (enable) {
+                        // 每0.2秒从底部随机位置射向随机目标
+                        if (self.raveInterval) clearInterval(self.raveInterval);
+                        self.raveInterval = setInterval(function() {
+                            if (!self.newYearRave) return;
+                            for (let i = 0; i < 3; i++) {  // 每次3发
+                                let startX = self.cw / 2 + (Math.random() - 0.5) * 200;
+                                let targetX = Math.random() * self.cw;
+                                let targetY = Math.random() * self.ch * 0.7;  // 上半部分
+                                self.currentHue = rand(0, 360); // 五彩斑斓
+                                self.createFireworks(startX, self.ch, targetX, targetY);
+                            }
+                        }, 200);
+                    } else {
+                        if (self.raveInterval) {
+                            clearInterval(self.raveInterval);
+                            self.raveInterval = null;
+                        }
+                    }
+                };
+
+                self.bindEvents = function() {
+                    $(window).on('resize', function() {
+                        clearTimeout(self.resizeTimeout);
+                        self.resizeTimeout = setTimeout(function() { self.resizeCanvas(); }, 100);
+                    });
+
+                    // 点击/触摸处理
+                    function handleStart(e) {
+                        e.preventDefault();
+                        // 初始化音频 (用户手势后)
+                        initAudio();
+                        if (audioCtx && audioCtx.state === 'suspended') {
+                            audioCtx.resume();
+                        }
+
+                        var clientX, clientY;
+                        if (e.type === 'mousedown') {
+                            clientX = e.clientX;
+                            clientY = e.clientY;
+                        } else {
+                            if (e.touches.length > 0) {
+                                clientX = e.touches[0].clientX;
+                                clientY = e.touches[0].clientY;
+                            } else return;
+                        }
+
+                        self.mx = clientX;
+                        self.my = clientY;
+                        self.currentHue = rand(self.hueMin, self.hueMax);
+                        self.createFireworks(self.cw / 2, self.ch, self.mx, self.my);
+
+                        function handleMove(e) {
+                            e.preventDefault();
+                            var moveX, moveY;
+                            if (e.type === 'mousemove') {
+                                moveX = e.clientX;
+                                moveY = e.clientY;
+                            } else {
+                                if (e.touches.length > 0) {
+                                    moveX = e.touches[0].clientX;
+                                    moveY = e.touches[0].clientY;
+                                } else return;
+                            }
+                            self.mx = moveX;
+                            self.my = moveY;
+                            self.currentHue = rand(self.hueMin, self.hueMax);
+                            self.createFireworks(self.cw / 2, self.ch, self.mx, self.my);
+                        }
+
+                        function handleEnd(e) {
+                            e.preventDefault();
+                            $(self.canvas).off('mousemove touchmove', handleMove);
+                            $(self.canvas).off('mouseup touchend touchcancel', handleEnd);
+                        }
+
+                        $(self.canvas).on('mousemove touchmove', handleMove);
+                        $(self.canvas).on('mouseup touchend touchcancel', handleEnd);
+                    }
+
+                    $(self.canvas).on('mousedown touchstart', handleStart);
+                    self.canvas.addEventListener('touchstart', function(e) { e.preventDefault(); }, { passive: false });
+                    self.canvas.addEventListener('touchmove', function(e) { e.preventDefault(); }, { passive: false });
+                };
+
+                self.canvasLoop = function() {
+                    requestAnimFrame(self.canvasLoop, self.canvas);
+
+                    // 拖尾
+                    self.ctx.globalCompositeOperation = 'source-over';
+                    self.ctx.fillStyle = 'rgba(0, 0, 0, ' + self.clearAlpha / 100 + ')';
+                    self.ctx.fillRect(0, 0, self.cw, self.ch);
+
+                    self.updateFireworks();
+                    self.updateParticles();
+                    self.drawFireworks();
+                    self.drawParticles();
+                };
+
+                self.init();
             };
-          };
 
-          self.createParticles = function (x, y, hue) {
-            var countdown = self.partCount;
-            while (countdown--) {
-              var newParticle = {
-                x: x,
-                y: y,
-                coordLast: [
-                  { x: x, y: y },
-                  { x: x, y: y },
-                  { x: x, y: y }
-                ],
-                angle: rand(0, 360),
-                speed: rand(
-                  self.partSpeed - self.partSpeedVariance <= 0
-                    ? 1
-                    : self.partSpeed - self.partSpeedVariance,
-                  self.partSpeed + self.partSpeedVariance
-                ),
-                friction: 1 - self.partFriction / 100,
-                gravity: self.partGravity / 2,
-                hue: rand(hue - self.hueVariance, hue + self.hueVariance),
-                brightness: rand(50, 80),
-                alpha: rand(40, 100) / 100,
-                decay: rand(10, 50) / 1000,
-                wind: (rand(0, self.partWind) - self.partWind / 2) / 25,
-                lineWidth: self.lineWidth
-              };
-              self.particles.push(newParticle);
+            // 启动增强烟花
+            var canvas = document.getElementById('fireworksCanvas');
+            var fworks = new FireworksEnhanced(canvas);
+            window.fworks = fworks;  // 便于从控制台或倒计时调用
+
+            // 如果已经到达新年（页面加载时恰好过了零点），立即激活
+            if (new Date() >= new Date(getNextNewYearTime())) {
+                newYearModeActive = true;
+                fworks.enableNewYearRave(true);
+                document.getElementById('newYearGreeting').innerText = '🎉 新 年 快 乐 ！ 🎉';
+                document.getElementById('countdownTimer').innerText = '00:00:00';
+                if (countdownInterval) clearInterval(countdownInterval);
             }
-          };
-
-          self.updateParticles = function () {
-            var i = self.particles.length;
-            while (i--) {
-              var p = self.particles[i];
-              var radians = (p.angle * Math.PI) / 180;
-              var vx = Math.cos(radians) * p.speed;
-              var vy = Math.sin(radians) * p.speed;
-              p.speed *= p.friction;
-
-              p.coordLast[2].x = p.coordLast[1].x;
-              p.coordLast[2].y = p.coordLast[1].y;
-              p.coordLast[1].x = p.coordLast[0].x;
-              p.coordLast[1].y = p.coordLast[0].y;
-              p.coordLast[0].x = p.x;
-              p.coordLast[0].y = p.y;
-
-              p.x += vx;
-              p.y += vy;
-              p.y += p.gravity;
-
-              p.angle += p.wind;
-              p.alpha -= p.decay;
-
-              if (
-                !hitTest(
-                  0,
-                  0,
-                  self.cw,
-                  self.ch,
-                  p.x - p.radius,
-                  p.y - p.radius,
-                  p.radius * 2,
-                  p.radius * 2
-                ) ||
-                p.alpha < 0.05
-              ) {
-                self.particles.splice(i, 1);
-              }
-            }
-          };
-
-          self.drawParticles = function () {
-            var i = self.particles.length;
-            while (i--) {
-              var p = self.particles[i];
-
-              var coordRand = rand(1, 3) - 1;
-              self.ctx.beginPath();
-              self.ctx.moveTo(
-                Math.round(p.coordLast[coordRand].x),
-                Math.round(p.coordLast[coordRand].y)
-              );
-              self.ctx.lineTo(Math.round(p.x), Math.round(p.y));
-              self.ctx.closePath();
-              self.ctx.strokeStyle =
-                "hsla(" +
-                p.hue +
-                ", 100%, " +
-                p.brightness +
-                "%, " +
-                p.alpha +
-                ")";
-              self.ctx.stroke();
-
-              if (self.flickerDensity > 0) {
-                var inverseDensity = 50 - self.flickerDensity;
-                if (rand(0, inverseDensity) === inverseDensity) {
-                  self.ctx.beginPath();
-                  self.ctx.arc(
-                    Math.round(p.x),
-                    Math.round(p.y),
-                    rand(p.lineWidth, p.lineWidth + 3) / 2,
-                    0,
-                    Math.PI * 2,
-                    false
-                  );
-                  self.ctx.closePath();
-                  var randAlpha = rand(50, 100) / 100;
-                  self.ctx.fillStyle =
-                    "hsla(" +
-                    p.hue +
-                    ", 100%, " +
-                    p.brightness +
-                    "%, " +
-                    randAlpha +
-                    ")";
-                  self.ctx.fill();
-                }
-              }
-            }
-          };
-
-          self.createFireworks = function (startX, startY, targetX, targetY) {
-            var newFirework = {
-              x: startX,
-              y: startY,
-              startX: startX,
-              startY: startY,
-              hitX: false,
-              hitY: false,
-              coordLast: [
-                { x: startX, y: startY },
-                { x: startX, y: startY },
-                { x: startX, y: startY }
-              ],
-              targetX: targetX,
-              targetY: targetY,
-              speed: self.fworkSpeed,
-              angle: Math.atan2(targetY - startY, targetX - startX),
-              shockwaveAngle:
-                Math.atan2(targetY - startY, targetX - startX) +
-                90 * (Math.PI / 180),
-              acceleration: self.fworkAccel / 100,
-              hue: self.currentHue,
-              brightness: rand(50, 80),
-              alpha: rand(50, 100) / 100,
-              lineWidth: self.lineWidth
-            };
-            self.fireworks.push(newFirework);
-          };
-
-          self.updateFireworks = function () {
-            var i = self.fireworks.length;
-
-            while (i--) {
-              var f = self.fireworks[i];
-              self.ctx.lineWidth = f.lineWidth;
-
-              (vx = Math.cos(f.angle) * f.speed),
-                (vy = Math.sin(f.angle) * f.speed);
-              f.speed *= 1 + f.acceleration;
-              f.coordLast[2].x = f.coordLast[1].x;
-              f.coordLast[2].y = f.coordLast[1].y;
-              f.coordLast[1].x = f.coordLast[0].x;
-              f.coordLast[1].y = f.coordLast[0].y;
-              f.coordLast[0].x = f.x;
-              f.coordLast[0].y = f.y;
-
-              if (f.startX >= f.targetX) {
-                if (f.x + vx <= f.targetX) {
-                  f.x = f.targetX;
-                  f.hitX = true;
-                } else {
-                  f.x += vx;
-                }
-              } else {
-                if (f.x + vx >= f.targetX) {
-                  f.x = f.targetX;
-                  f.hitX = true;
-                } else {
-                  f.x += vx;
-                }
-              }
-
-              if (f.startY >= f.targetY) {
-                if (f.y + vy <= f.targetY) {
-                  f.y = f.targetY;
-                  f.hitY = true;
-                } else {
-                  f.y += vy;
-                }
-              } else {
-                if (f.y + vy >= f.targetY) {
-                  f.y = f.targetY;
-                  f.hitY = true;
-                } else {
-                  f.y += vy;
-                }
-              }
-
-              if (f.hitX && f.hitY) {
-                self.createParticles(f.targetX, f.targetY, f.hue);
-                self.fireworks.splice(i, 1);
-              }
-            }
-          };
-
-          self.drawFireworks = function () {
-            var i = self.fireworks.length;
-            self.ctx.globalCompositeOperation = "lighter";
-            while (i--) {
-              var f = self.fireworks[i];
-              self.ctx.lineWidth = f.lineWidth;
-
-              var coordRand = rand(1, 3) - 1;
-              self.ctx.beginPath();
-              self.ctx.moveTo(
-                Math.round(f.coordLast[coordRand].x),
-                Math.round(f.coordLast[coordRand].y)
-              );
-              self.ctx.lineTo(Math.round(f.x), Math.round(f.y));
-              self.ctx.closePath();
-              self.ctx.strokeStyle =
-                "hsla(" +
-                f.hue +
-                ", 100%, " +
-                f.brightness +
-                "%, " +
-                f.alpha +
-                ")";
-              self.ctx.stroke();
-
-              if (self.showTarget) {
-                self.ctx.save();
-                self.ctx.beginPath();
-                self.ctx.arc(
-                  Math.round(f.targetX),
-                  Math.round(f.targetY),
-                  rand(1, 8),
-                  0,
-                  Math.PI * 2,
-                  false
-                );
-                self.ctx.closePath();
-                self.ctx.lineWidth = 1;
-                self.ctx.stroke();
-                self.ctx.restore();
-              }
-
-              if (self.showShockwave) {
-                self.ctx.save();
-                self.ctx.translate(Math.round(f.x), Math.round(f.y));
-                self.ctx.rotate(f.shockwaveAngle);
-                self.ctx.beginPath();
-                self.ctx.arc(0, 0, 1 * (f.speed / 5), 0, Math.PI, true);
-                self.ctx.strokeStyle =
-                  "hsla(" +
-                  f.hue +
-                  ", 100%, " +
-                  f.brightness +
-                  "%, " +
-                  rand(25, 60) / 100 +
-                  ")";
-                self.ctx.lineWidth = f.lineWidth;
-                self.ctx.stroke();
-                self.ctx.restore();
-              }
-            }
-          };
-
-          self.bindEvents = function () {
-            $(window).on("resize", function () {
-              clearTimeout(self.timeout);
-              self.timeout = setTimeout(function () {
-                self.canvas.width = self.cw = $(window).innerWidth();
-                self.canvas.height = self.ch = $(window).innerHeight();
-                self.ctx.lineCap = "round";
-                self.ctx.lineJoin = "round";
-              }, 100);
-            });
-
-            $(self.canvas).on("mousedown", function (e) {
-              self.mx = e.pageX - self.canvas.offsetLeft;
-              self.my = e.pageY - self.canvas.offsetTop;
-              self.currentHue = rand(self.hueMin, self.hueMax);
-              self.createFireworks(self.cw / 2, self.ch, self.mx, self.my);
-
-              $(self.canvas).on("mousemove.fireworks", function (e) {
-                self.mx = e.pageX - self.canvas.offsetLeft;
-                self.my = e.pageY - self.canvas.offsetTop;
-                self.currentHue = rand(self.hueMin, self.hueMax);
-                self.createFireworks(self.cw / 2, self.ch, self.mx, self.my);
-              });
-            });
-
-            $(self.canvas).on("mouseup", function (e) {
-              $(self.canvas).off("mousemove.fireworks");
-            });
-          };
-
-          self.clear = function () {
-            self.particles = [];
-            self.fireworks = [];
-            self.ctx.clearRect(0, 0, self.cw, self.ch);
-          };
-
-          self.canvasLoop = function () {
-            requestAnimFrame(self.canvasLoop, self.canvas);
-            self.ctx.globalCompositeOperation = "destination-out";
-            self.ctx.fillStyle = "rgba(0,0,0," + self.clearAlpha / 100 + ")";
-            self.ctx.fillRect(0, 0, self.cw, self.ch);
-            self.updateFireworks();
-            self.updateParticles();
-            self.drawFireworks();
-            self.drawParticles();
-          };
-
-          self.init();
-        };
-        var fworks = new Fireworks();
-      });
+        })();
     </script>
-  </body>
+</body>
 </html>
